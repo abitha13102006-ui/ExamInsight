@@ -19,3 +19,22 @@ def upload_exam():
     )
     res = mongo.db.exams.insert_one(doc)
     return jsonify({"success": True, "exam_id": str(res.inserted_id)}), 201
+
+
+@exam_bp.route('/analytics/staff/dashboard', methods=['GET'])
+def get_staff_dashboard():
+    total_students = mongo.db.results.count_documents({})
+    high_risk_count = mongo.db.results.count_documents({"ml_analytics.risk_category": "High Risk"})
+    
+    pipeline = [{"$group": {"_id": None, "avg_score": {"$avg": "$total_obtained"}}}]
+    avg_res = list(mongo.db.results.aggregate(pipeline))
+    avg_score = round(avg_res[0]["avg_score"], 2) if avg_res else 0
+
+    return jsonify({
+        "success": True,
+        "data": {
+            "total_students": total_students,
+            "avg_score": avg_score,
+            "high_risk_count": high_risk_count
+        }
+    }), 200
