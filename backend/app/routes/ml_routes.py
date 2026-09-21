@@ -1,12 +1,13 @@
 from flask import Blueprint, jsonify
 from flask_jwt_extended import jwt_required
 from app import mongo
-from app.ml.risk_classifier import RiskClassifier
+from app.ml.risk_classifier import MLPipeline
 from app.ml.performance_cluster import PerformanceClustering
 from bson.objectid import ObjectId
 
+
 ml_bp = Blueprint('ml', __name__)
-risk_model = RiskClassifier()
+classifier = MLPipeline()
 cluster_model = PerformanceClustering(n_clusters=3)
 
 @ml_bp.route('/exam/<exam_id>/run-pipeline', methods=['POST'])
