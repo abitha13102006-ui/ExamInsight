@@ -28,7 +28,7 @@ def run_ml_pipeline(exam_id):
 
     for idx, r in enumerate(results):
         perc = features[idx][0]
-        risk = risk_model.predict_risk(perc, features[idx][1])
+        risk = classifier.analyze_student(score_pct=perc, attendance=features[idx][1])["risk_category"]
         
         mongo.db.results.update_one(
             {"_id": r["_id"]},

@@ -1,4 +1,5 @@
 import io
+from datetime import datetime
 import pandas as pd
 from flask import Blueprint, request, jsonify
 from app import mongo
@@ -16,6 +17,11 @@ def upload_dataset():
 
     file = request.files['file']
     filename = file.filename.lower()
+
+    # Optional label for this exam attempt (e.g. "Unit Test 1", "Midterm").
+    # Used to build historical mark-analysis trends for staff & student dashboards.
+    exam_name = request.form.get('exam_name', '').strip() or f"Exam {datetime.utcnow().strftime('%d-%b-%Y %H:%M')}"
+    exam_date = datetime.utcnow()
 
     if not filename.endswith(('.xlsx', '.xls', '.csv')):
         return jsonify({
@@ -83,13 +89,30 @@ def upload_dataset():
                 "total_obtained": score,
                 "attendance": attendance,
                 "topic_scores": topic_scores,
-                "ml_analytics": ml_results
+                "ml_analytics": ml_results,
+                "last_exam_name": exam_name,
+                "last_updated": exam_date.isoformat()
             }
 
-            # Prepare update statement for MongoDB
+            # One entry per exam upload, appended to this student's history array.
+            # This is what powers the historical mark-analysis views on both dashboards.
+            history_entry = {
+                "exam_name": exam_name,
+                "date": exam_date.isoformat(),
+                "score": score,
+                "attendance": attendance,
+                "topic_scores": topic_scores,
+                "risk_category": ml_results.get("risk_category")
+            }
+
+            # Prepare update statement for MongoDB: overwrite the "current" snapshot
+            # fields, but push (never overwrite) into the history array.
             mongo.db.results.update_one(
                 {"student_id": student_id}, 
-                {"$set": record}, 
+                {
+                    "$set": record,
+                    "$push": {"history": history_entry}
+                }, 
                 upsert=True
             )
             inserted_records.append(record)
@@ -136,3 +159,55 @@ def get_student_dashboard(student_id):
         return jsonify({"success": False, "message": "Student record not found."}), 404
 
     return jsonify({"success": True, "data": student}), 200
+
+
+@exam_bp.route('/analytics/staff/history', methods=['GET'])
+def get_staff_history():
+    """
+    Class-wide historical trend: one point per exam upload, averaged across
+    every student who has a record for that exam. Powers the staff dashboard's
+    'historical mark analysis' chart.
+    """
+    pipeline = [
+        {"$unwind": "$history"},
+        {"$group": {
+            "_id": "$history.exam_name",
+            "date": {"$min": "$history.date"},
+            "avg_score": {"$avg": "$history.score"},
+            "avg_attendance": {"$avg": "$history.attendance"},
+            "high_risk_count": {
+                "$sum": {"$cond": [{"$eq": ["$history.risk_category", "High Risk"]}, 1, 0]}
+            },
+            "student_count": {"$sum": 1}
+        }},
+        {"$sort": {"date": 1}}
+    ]
+
+    results = list(mongo.db.results.aggregate(pipeline))
+    history = [{
+        "exam_name": r["_id"],
+        "date": r["date"],
+        "avg_score": round(r["avg_score"], 2),
+        "avg_attendance": round(r["avg_attendance"], 2),
+        "high_risk_count": r["high_risk_count"],
+        "student_count": r["student_count"]
+    } for r in results]
+
+    return jsonify({"success": True, "data": history}), 200
+
+
+@exam_bp.route('/analytics/student/<student_id>/history', methods=['GET'])
+def get_student_history(student_id):
+    """
+    Per-student historical trend across every exam they've been uploaded in.
+    Powers the student dashboard's 'my progress over time' chart.
+    """
+    student = mongo.db.results.find_one(
+        {"student_id": str(student_id).strip()},
+        {"_id": 0, "history": 1}
+    )
+    if not student:
+        return jsonify({"success": False, "message": "Student record not found."}), 404
+
+    history = sorted(student.get("history", []), key=lambda h: h.get("date", ""))
+    return jsonify({"success": True, "data": history}), 200

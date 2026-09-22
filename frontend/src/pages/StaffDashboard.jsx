@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 const api = axios.create({ baseURL: 'http://localhost:5000/api' });
 
@@ -17,7 +18,9 @@ const renderValue = (val) => {
 
 function StaffDashboard() {
   const [file, setFile] = useState(null);
+  const [examName, setExamName] = useState('');
   const [stats, setStats] = useState({ total_students: 0, avg_score: 0, high_risk_count: 0, students: [] });
+  const [history, setHistory] = useState([]);
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -32,8 +35,20 @@ function StaffDashboard() {
     }
   };
 
+  const fetchHistory = async () => {
+    try {
+      const res = await api.get('/exam/analytics/staff/history');
+      if (res.data.success) {
+        setHistory(res.data.data);
+      }
+    } catch (err) {
+      console.error('Error fetching class history:', err);
+    }
+  };
+
   useEffect(() => {
     fetchDashboardData();
+    fetchHistory();
   }, []);
 
   const handleFileUpload = async (e) => {
@@ -45,17 +60,26 @@ function StaffDashboard() {
 
     const formData = new FormData();
     formData.append('file', file);
+    if (examName.trim()) {
+      formData.append('exam_name', examName.trim());
+    }
 
     setLoading(true);
     setMessage('');
 
     try {
-      const res = await api.post('/exam/upload-csv', formData, {
+      // NOTE: this must match the backend blueprint route exactly.
+      // The backend registers POST /api/exam/upload-dataset (see exam_routes.py) —
+      // a mismatched path here (e.g. '/exam/upload-csv') is what previously
+      // caused every upload to fail with a generic network/404 error.
+      const res = await api.post('/exam/upload-dataset', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       if (res.data.success) {
         setMessage(res.data.message);
+        setExamName('');
         fetchDashboardData(); // Refresh UI metrics immediately
+        fetchHistory();       // Refresh historical trend with the new exam point
       }
     } catch (err) {
       setMessage(err.response?.data?.message || 'File upload failed. Ensure backend server is running.');
@@ -100,6 +124,21 @@ function StaffDashboard() {
         </p>
 
         <form onSubmit={handleFileUpload} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '15px' }}>
+          <input
+            type="text"
+            placeholder="Exam label (e.g. Unit Test 1) — optional"
+            value={examName}
+            onChange={(e) => setExamName(e.target.value)}
+            style={{
+              padding: '10px 14px',
+              borderRadius: '6px',
+              border: '1px solid #334155',
+              backgroundColor: '#0f172a',
+              color: '#fff',
+              width: '280px',
+              fontSize: '14px'
+            }}
+          />
           <input 
             type="file" 
             accept=".csv, .xlsx, .xls"
@@ -130,6 +169,28 @@ function StaffDashboard() {
           </p>
         )}
       </div>
+
+      {/* Historical Mark Analysis (class-wide, across every exam uploaded so far) */}
+      {history.length > 0 && (
+        <div style={{ backgroundColor: '#1e293b', padding: '20px', borderRadius: '10px', marginBottom: '30px' }}>
+          <h3 style={{ color: '#38bdf8', marginTop: 0 }}>Historical Mark Analysis (Class-Wide)</h3>
+          <p style={{ color: '#94a3b8', fontSize: '13px', marginTop: '-8px', marginBottom: '15px' }}>
+            Average score, average attendance, and high-risk count across every exam uploaded so far.
+          </p>
+          <ResponsiveContainer width="100%" height={320}>
+            <LineChart data={history} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+              <XAxis dataKey="exam_name" stroke="#94a3b8" tick={{ fontSize: 12 }} />
+              <YAxis stroke="#94a3b8" tick={{ fontSize: 12 }} />
+              <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155', color: '#fff' }} />
+              <Legend />
+              <Line type="monotone" dataKey="avg_score" name="Avg Score %" stroke="#34d399" strokeWidth={2} />
+              <Line type="monotone" dataKey="avg_attendance" name="Avg Attendance %" stroke="#818cf8" strokeWidth={2} />
+              <Line type="monotone" dataKey="high_risk_count" name="High Risk Count" stroke="#f87171" strokeWidth={2} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
 
       {/* Student Dataset Table */}
       {stats.students && stats.students.length > 0 && (
