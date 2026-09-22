@@ -1,44 +1,40 @@
 import React, { useState } from 'react';
+import Login from './pages/Login';
 import StaffDashboard from './pages/StaffDashboard';
 import StudentDashboard from './pages/StudentDashboard';
 
 function App() {
-  const [view, setView] = useState('staff');
+  const [userAuth, setUserAuth] = useState(null);
+
+  const handleLoginSuccess = (authData) => {
+    setUserAuth(authData);
+  };
+
+  const handleLogout = () => {
+    setUserAuth(null);
+  };
+
+  if (!userAuth) {
+    return <Login onLoginSuccess={handleLoginSuccess} />;
+  }
 
   return (
-    <div>
-      <nav style={{ padding: '12px 20px', backgroundColor: '#1e293b', display: 'flex', gap: '12px' }}>
-        <button 
-          onClick={() => setView('staff')}
-          style={{ 
-            padding: '8px 16px', 
-            backgroundColor: view === 'staff' ? '#6366f1' : '#334155', 
-            color: '#fff', 
-            border: 'none', 
-            borderRadius: '6px', 
-            cursor: 'pointer',
-            fontWeight: '600'
-          }}
-        >
-          Faculty View
-        </button>
-        <button 
-          onClick={() => setView('student')}
-          style={{ 
-            padding: '8px 16px', 
-            backgroundColor: view === 'student' ? '#6366f1' : '#334155', 
-            color: '#fff', 
-            border: 'none', 
-            borderRadius: '6px', 
-            cursor: 'pointer',
-            fontWeight: '600'
-          }}
-        >
-          Student View
-        </button>
-      </nav>
+    <div style={{ fontFamily: 'sans-serif', padding: '20px' }}>
+      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #ddd', paddingBottom: '10px', marginBottom: '20px' }}>
+        <h2>ExamInsight AI Dashboard</h2>
+        <div>
+          <span style={{ marginRight: '15px' }}>Logged in as: <strong>{userAuth.role.toUpperCase()}</strong></span>
+          <button onClick={handleLogout} style={{ padding: '6px 12px', backgroundColor: '#dc3545', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+            Logout
+          </button>
+        </div>
+      </header>
 
-      {view === 'staff' ? <StaffDashboard /> : <StudentDashboard />}
+      {userAuth.role === 'staff' ? (
+        <StaffDashboard />
+      ) : (
+        <StudentDashboard studentId={userAuth.student_id} initialData={userAuth.data} />
+      )}
     </div>
   );
 }
